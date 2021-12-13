@@ -86,7 +86,8 @@ TEST_P(AllocatorTest, AllocateBuffer) {
 
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
-      device_allocator_, memory_type, buffer_usage, kAllocationSize, &buffer));
+      device_allocator_, memory_type, buffer_usage, kAllocationSize,
+      iree_const_byte_span_empty(), &buffer));
 
   EXPECT_EQ(device_allocator_, iree_hal_buffer_allocator(buffer));
   // At a mimimum, the requested memory type should be respected.
@@ -110,7 +111,7 @@ TEST_P(AllocatorTest, AllocateEmptyBuffer) {
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
       device_allocator_, memory_type, buffer_usage, /*allocation_size=*/0,
-      &buffer));
+      iree_const_byte_span_empty(), &buffer));
 
   iree_hal_buffer_release(buffer);
 }

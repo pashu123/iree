@@ -46,7 +46,8 @@ TEST_P(BufferMappingTest, AllocatorSupportsBufferMapping) {
 
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
-      device_allocator_, memory_type, buffer_usage, kAllocationSize, &buffer));
+      device_allocator_, memory_type, buffer_usage, kAllocationSize,
+      iree_const_byte_span_empty(), &buffer));
 
   EXPECT_EQ(device_allocator_, iree_hal_buffer_allocator(buffer));
   EXPECT_TRUE(
@@ -64,7 +65,8 @@ TEST_P(BufferMappingTest, Zero) {
 
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
-      device_allocator_, memory_type, buffer_usage, kAllocationSize, &buffer));
+      device_allocator_, memory_type, buffer_usage, kAllocationSize,
+      iree_const_byte_span_empty(), &buffer));
 
   IREE_ASSERT_OK(iree_hal_buffer_zero(buffer, /*byte_offset=*/0,
                                       /*byte_length=*/kAllocationSize));
@@ -86,7 +88,8 @@ TEST_P(BufferMappingTest, FillEmpty) {
 
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
-      device_allocator_, memory_type, buffer_usage, kAllocationSize, &buffer));
+      device_allocator_, memory_type, buffer_usage, kAllocationSize,
+      iree_const_byte_span_empty(), &buffer));
 
   IREE_ASSERT_OK(iree_hal_buffer_zero(buffer, /*byte_offset=*/0,
                                       /*byte_length=*/kAllocationSize));
@@ -114,7 +117,8 @@ TEST_P(BufferMappingTest, Fill) {
 
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
-      device_allocator_, memory_type, buffer_usage, kAllocationSize, &buffer));
+      device_allocator_, memory_type, buffer_usage, kAllocationSize,
+      iree_const_byte_span_empty(), &buffer));
 
   uint8_t fill_value = 0x07;
   IREE_ASSERT_OK(iree_hal_buffer_fill(buffer, /*byte_offset=*/0,
@@ -139,7 +143,8 @@ TEST_P(BufferMappingTest, Write) {
 
   iree_hal_buffer_t* buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
-      device_allocator_, memory_type, buffer_usage, kAllocationSize, &buffer));
+      device_allocator_, memory_type, buffer_usage, kAllocationSize,
+      iree_const_byte_span_empty(), &buffer));
 
   uint8_t fill_value = 0x07;
   std::vector<uint8_t> reference_buffer(kAllocationSize);
@@ -163,10 +168,10 @@ TEST_P(BufferMappingTest, Copy) {
   iree_hal_buffer_t* buffer_b;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
       device_allocator_, memory_type, buffer_usage, kAllocationSize,
-      &buffer_a));
+      iree_const_byte_span_empty(), &buffer_a));
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
       device_allocator_, memory_type, buffer_usage, kAllocationSize,
-      &buffer_b));
+      iree_const_byte_span_empty(), &buffer_b));
 
   uint8_t fill_value = 0x07;
   IREE_ASSERT_OK(iree_hal_buffer_fill(buffer_a, /*byte_offset=*/0,
