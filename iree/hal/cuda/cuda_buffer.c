@@ -131,6 +131,8 @@ CUdeviceptr iree_hal_cuda_buffer_device_pointer(
 
 const iree_hal_buffer_vtable_t iree_hal_cuda_buffer_vtable = {
     .destroy = iree_hal_cuda_buffer_destroy,
+    // TODO(thomasraoux): use cuda memcpy functions instead.
+    .transfer_range = iree_hal_buffer_transfer_mappable_range,
     .map_range = iree_hal_cuda_buffer_map_range,
     .unmap_range = iree_hal_cuda_buffer_unmap_range,
     .invalidate_range = iree_hal_cuda_buffer_invalidate_range,

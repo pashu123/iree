@@ -131,6 +131,7 @@ hipDeviceptr_t iree_hal_rocm_buffer_device_pointer(
 
 const iree_hal_buffer_vtable_t iree_hal_rocm_buffer_vtable = {
     .destroy = iree_hal_rocm_buffer_destroy,
+    .transfer = iree_hal_buffer_transfer_mappable_range,
     .map_range = iree_hal_rocm_buffer_map_range,
     .unmap_range = iree_hal_rocm_buffer_unmap_range,
     .invalidate_range = iree_hal_rocm_buffer_invalidate_range,
