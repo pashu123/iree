@@ -197,13 +197,13 @@ TEST_P(CommandBufferTest, CopyWholeBuffer) {
 }
 
 TEST_P(CommandBufferTest, CopySubBuffer) {
-  iree_hal_command_buffer_t* command_buffer;
+  iree_hal_command_buffer_t* command_buffer = NULL;
   IREE_ASSERT_OK(iree_hal_command_buffer_create(
       device_, IREE_HAL_COMMAND_BUFFER_MODE_ONE_SHOT,
       IREE_HAL_COMMAND_CATEGORY_TRANSFER, IREE_HAL_QUEUE_AFFINITY_ANY,
       &command_buffer));
 
-  iree_hal_buffer_t* device_buffer;
+  iree_hal_buffer_t* device_buffer = NULL;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
       device_allocator_,
       IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE,
@@ -216,14 +216,14 @@ TEST_P(CommandBufferTest, CopySubBuffer) {
 
   // Create another host buffer with a smaller size.
   std::vector<uint8_t> host_buffer_data(kBufferSize, i8_val);
-  iree_hal_buffer_t* host_buffer;
+  iree_hal_buffer_t* host_buffer = NULL;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
       device_allocator_,
       IREE_HAL_MEMORY_TYPE_HOST_VISIBLE | IREE_HAL_MEMORY_TYPE_HOST_CACHED |
           IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
-      IREE_HAL_BUFFER_USAGE_ALL, kBufferSize / 2,
+      IREE_HAL_BUFFER_USAGE_ALL, host_buffer_data.size() / 2,
       iree_make_const_byte_span(host_buffer_data.data(),
-                                host_buffer_data.size()),
+                                host_buffer_data.size() / 2),
       &host_buffer));
 
   // Copy the host buffer to the device buffer; zero fill the untouched bytes.

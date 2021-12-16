@@ -480,7 +480,6 @@ static iree_status_t iree_trace_replay_parse_hal_buffer(
   iree_string_view_t value =
       iree_string_view_trim(iree_yaml_node_as_string(contents_node));
 
-  iree_status_t status = iree_ok_status();
   if (strcmp(contents_node->tag, "tag:yaml.org,2002:binary") == 0) {
     return iree_yaml_base64_decode(value, mapping->contents);
   } else if (strcmp(contents_node->tag, "tag:yaml.org,2002:str") == 0) {
@@ -647,7 +646,7 @@ typedef struct iree_trace_replay_generation_params_t {
   iree_host_size_t shape_rank;
 } iree_trace_replay_generation_params_t;
 
-static iree_status_t iree_trace_replay_generate_hal_buffer(
+static iree_status_t iree_trace_replay_generate_hal_buffer_callback(
     iree_hal_buffer_mapping_t* mapping, void* user_data) {
   iree_trace_replay_generation_params_t* params =
       (iree_trace_replay_generation_params_t*)user_data;
@@ -709,28 +708,34 @@ static iree_status_t iree_trace_replay_parse_hal_buffer_view(
       document, value_node, iree_make_cstring_view("contents_generator"),
       &generator_node));
 
+  iree_hal_buffer_view_t* buffer_view = NULL;
   if (contents_node && generator_node) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "(%zu): cannot have both contents and contents_generator",
         generator_node->start_mark.line);
+  } else if (contents_node || generator_node) {
+    iree_trace_replay_generation_params_t params = {
+        .replay = replay,
+        .document = document,
+        .contents_node = contents_node,
+        .generator_node = generator_node,
+        .element_type = element_type,
+        .shape = shape,
+        .shape_rank = shape_rank,
+    };
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_view_generate_buffer(
+        iree_hal_device_allocator(replay->device), shape, shape_rank,
+        element_type, encoding_type, IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
+        IREE_HAL_BUFFER_USAGE_DISPATCH | IREE_HAL_BUFFER_USAGE_TRANSFER,
+        iree_trace_replay_generate_hal_buffer_callback, &params, &buffer_view));
+  } else {
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_view_allocate_buffer(
+        iree_hal_device_allocator(replay->device), shape, shape_rank,
+        element_type, encoding_type, IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
+        IREE_HAL_BUFFER_USAGE_DISPATCH | IREE_HAL_BUFFER_USAGE_TRANSFER,
+        iree_const_byte_span_empty(), &buffer_view));
   }
-
-  iree_trace_replay_generation_params_t params = {
-      .replay = replay,
-      .document = document,
-      .contents_node = contents_node,
-      .generator_node = generator_node,
-      .element_type = element_type,
-      .shape = shape,
-      .shape_rank = shape_rank,
-  };
-  iree_hal_buffer_view_t* buffer_view = NULL;
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_view_generate_buffer(
-      iree_hal_device_allocator(replay->device), shape, shape_rank,
-      element_type, encoding_type, IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
-      IREE_HAL_BUFFER_USAGE_DISPATCH | IREE_HAL_BUFFER_USAGE_TRANSFER,
-      iree_trace_replay_generate_hal_buffer, &params, &buffer_view));
 
   iree_vm_ref_t buffer_view_ref = iree_hal_buffer_view_move_ref(buffer_view);
   iree_status_t status =
