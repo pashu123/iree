@@ -20,6 +20,8 @@
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Vector/VectorOps.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
+#include "mlir/Dialect/Math/Transforms/Passes.h"
 
 namespace mlir {
 namespace iree_compiler {
@@ -350,6 +352,7 @@ struct HALInterfaceWorkgroupOpsConverter final
 void populateLLVMConversionPatterns(MLIRContext *context,
                                     OwningRewritePatternList &patterns,
                                     LLVMTypeConverter &converter) {
+  populateMathPolynomialApproximationPatterns(patterns);
   patterns
       .insert<ConvertFunc, ConvertIREEBindingSubspanOp, ConvertIREEConstantOp>(
           context, converter);
