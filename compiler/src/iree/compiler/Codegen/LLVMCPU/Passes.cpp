@@ -367,6 +367,7 @@ void addMultiTilingExpertPassPipeline(OpPassManager &funcPassManager,
         funcPassManager.addPass(createConcretizePadResultShapePass());
         continue;
       }
+      funcPassManager.addPass(createLinalgFoldUnitExtentDimsPass());
 
       if (i == tilingConfig.getVectorReductionLevel()) {
         // Run SplitReductionPass before the final reduction Fuse pass, because
