@@ -77,6 +77,41 @@ static void tileNonPackedDimsFor3DPackOps(RewriterBase &rewriter,
   });
 }
 
+static void tileNonPackedDimsFor5DPUnpackOps(RewriterBase &rewriter,
+                                             FunctionOpInterface funcOp) {
+  funcOp.walk([&](tensor::UnPackOp unpackOp) {
+    if (unpackOp.getSourceRank() != 5 || unpackOp.getDestRank() != 3) {
+      return;
+    }
+
+    OpFoldResult zero = rewriter.getIndexAttr(0);
+    OpFoldResult one = rewriter.getIndexAttr(1);
+    SmallVector<OpFoldResult> tileSizes(unpackOp.getDestRank(), one);
+
+    for (auto dim : unpackOp.getInnerDimsPos()) {
+      tileSizes[dim] = zero;
+    }
+
+    // Skip the tiling if the size is already 1.
+    RankedTensorType destType = unpackOp.getDestType();
+    for (auto [idx, val] : llvm::enumerate(tileSizes)) {
+      if (val && destType.getDimSize(idx) == 1)
+        return;
+    }
+
+    auto tilingInterfaceOp = cast<TilingInterface>(unpackOp.getOperation());
+    auto options = scf::SCFTilingOptions().setTileSizes(tileSizes);
+    auto outerDimsPerm = unpackOp.getOuterDimsPerm();
+    if (!outerDimsPerm.empty()) {
+      options.setInterchange(outerDimsPerm);
+    }
+    FailureOr<scf::SCFTilingResult> tilingResult =
+        scf::tileUsingSCF(rewriter, tilingInterfaceOp, options);
+    assert(succeeded(tilingResult));
+    rewriter.replaceOp(unpackOp, tilingResult->replacements);
+  });
+}
+
 /// Returns true if:
 ///    1. `genericOp` is element-wise with all identity indexing maps
 ///    2. `genericOp` has only one input and one output with the same shape
@@ -276,6 +311,79 @@ struct Convert3DPackto2DPackPattern : public OpRewritePattern<tensor::PackOp> {
   }
 };
 
+struct Convert5DUnPackto4DUnPackPattern
+    : public OpRewritePattern<tensor::UnPackOp> {
+  using OpRewritePattern<tensor::UnPackOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tensor::UnPackOp unpackOp,
+                                PatternRewriter &rewriter) const override {
+    if (unpackOp.getSourceRank() != 5 || unpackOp.getDestRank() != 3) {
+      return failure();
+    }
+
+    int64_t srcPos = 0;
+    int64_t destPos = 0;
+    llvm::SmallDenseSet<int64_t> s;
+    s.insert(unpackOp.getInnerDimsPos().begin(),
+             unpackOp.getInnerDimsPos().end());
+    SmallVector<int64_t> outerDimsPermOrSeq =
+        llvm::to_vector(llvm::seq<int64_t>(0, unpackOp.getDestRank()));
+    if (!unpackOp.getOuterDimsPerm().empty())
+      applyPermutationToVector(outerDimsPermOrSeq, unpackOp.getOuterDimsPerm());
+
+    for (auto [idx, val] : llvm::enumerate(outerDimsPermOrSeq)) {
+      if (s.contains(val))
+        continue;
+      srcPos = idx;
+      destPos = val;
+      break;
+    }
+
+    if (unpackOp.getSourceType().getDimSize(srcPos) != 1) {
+      return rewriter.notifyMatchFailure(unpackOp, "srcPos != 1");
+    }
+
+    if (unpackOp.getDestType().getDimSize(destPos) != 1) {
+      return rewriter.notifyMatchFailure(unpackOp, "destPos != 1");
+    }
+
+    SmallVector<int64_t> newInnerDimsPos(unpackOp.getInnerDimsPos());
+    for (auto &val : newInnerDimsPos) {
+      assert(val != destPos);
+      if (val > destPos)
+        val--;
+    }
+    SmallVector<int64_t> newOuterDimsPerm(unpackOp.getOuterDimsPerm());
+    if (!newOuterDimsPerm.empty()) {
+      newOuterDimsPerm.erase(newOuterDimsPerm.begin() + srcPos);
+      for (auto &val : newOuterDimsPerm) {
+        if (val > destPos)
+          val--;
+      }
+    }
+
+    Location loc = unpackOp.getLoc();
+    auto reducedSrcType =
+        RankedTensorType::Builder(unpackOp.getSourceType()).dropDim(srcPos);
+    auto reducedSrc = tensor::createCanonicalRankReducingExtractSliceOp(
+        rewriter, loc, unpackOp.getSource(), reducedSrcType);
+
+    auto reducedDestType =
+        RankedTensorType::Builder(unpackOp.getDestType()).dropDim(destPos);
+    auto reducedDest = tensor::createCanonicalRankReducingExtractSliceOp(
+        rewriter, loc, unpackOp.getDest(), reducedDestType);
+
+    auto newUnpackOp = rewriter.create<tensor::UnPackOp>(
+        loc, reducedSrc, reducedDest, newInnerDimsPos, unpackOp.getMixedTiles(),
+        newOuterDimsPerm);
+
+    auto insertSliceOp = tensor::createCanonicalRankReducingInsertSliceOp(
+        rewriter, loc, newUnpackOp.getResult(), unpackOp.getDest());
+    rewriter.replaceOp(unpackOp, insertSliceOp);
+    return success();
+  }
+};
+
 struct CPUPrepareUkernelsPass
     : public CPUPrepareUkernelsBase<CPUPrepareUkernelsPass> {
   void getDependentDialects(DialectRegistry &registry) const override {
@@ -294,11 +402,12 @@ void CPUPrepareUkernelsPass::runOnOperation() {
   IRRewriter rewriter(ctx);
   tileBatchDimsForBatchMmt4dOp(rewriter, funcOp);
   tileNonPackedDimsFor3DPackOps(rewriter, funcOp);
+  tileNonPackedDimsFor5DPUnpackOps(rewriter, funcOp);
 
   // Convert linalg.batch_mmt4d with batch dim = 1 into linalg.mmt4d.
   RewritePatternSet patterns(ctx);
-  patterns.add<ConvertBatchMmt4DtoMmt4DPattern, Convert3DPackto2DPackPattern>(
-      ctx);
+  patterns.add<ConvertBatchMmt4DtoMmt4DPattern, Convert3DPackto2DPackPattern,
+               Convert5DUnPackto4DUnPackPattern>(ctx);
   // Canonicalize extract and insert slice ops created during the conversion.
   tensor::populateMergeConsecutiveInsertExtractSlicePatterns(patterns);
   tensor::populateFoldTensorSubsetOpPatterns(patterns);
@@ -306,6 +415,7 @@ void CPUPrepareUkernelsPass::runOnOperation() {
   tensor::ExtractSliceOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::EmptyOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::PackOp::getCanonicalizationPatterns(patterns, ctx);
+  tensor::UnPackOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::CastOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::populateFoldTensorEmptyPatterns(patterns);
   if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
