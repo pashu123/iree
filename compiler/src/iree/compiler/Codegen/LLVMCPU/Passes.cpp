@@ -565,7 +565,6 @@ void addCPUDataTilingPipeline(OpPassManager &funcPassManager,
   addTileAndDistributePasses(funcPassManager);
 
   if (pipelineOpt.enableUkernels) {
-    funcPassManager.addPass(createDecomposeBatchMmt4DOpsPass());
     funcPassManager.addPass(
         createCPULowerToUKernelsPass(clSkipIntermediateRoundings));
   }
