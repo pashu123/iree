@@ -20,18 +20,12 @@ struct DataLayoutPropagationPass
     : public DataLayoutPropagationBase<DataLayoutPropagationPass> {
   void runOnOperation() override {
     MLIRContext *context = &getContext();
-    FunctionOpInterface funcOp = getOperation();
-
     RewritePatternSet patterns(context);
-    linalg::populateDataLayoutPropagationPatterns(patterns, [](Operation *op) {
-      // Currently only bubble up/push down pack/unpack through collapse/expand
-      // shape ops.
-      return isa<tensor::CollapseShapeOp, tensor::ExpandShapeOp>(op);
-    });
-    if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
-      funcOp.emitOpError("folding patterns failed");
+    linalg::populateDataLayoutPropagationPatterns(
+        patterns, [](Operation *op) { op->dump(); return true; });
+    if (failed(
+            applyPatternsAndFoldGreedily(getOperation(), std::move(patterns))))
       return signalPassFailure();
-    }
   }
 };
 

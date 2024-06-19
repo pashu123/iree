@@ -59,6 +59,7 @@ iree_cc_library(
     "LLVMCPUCheckIRBeforeLLVMConversion.cpp"
     "LLVMCPUDropVectorUnitDims.cpp"
     "LLVMCPUEmitVectorizationRemarks.cpp"
+    "LLVMCPUGenericBroadCastToExpandShape.cpp"
     "LLVMCPULinkExecutables.cpp"
     "LLVMCPULowerExecutableTarget.cpp"
     "LLVMCPUMmt4dVectorLowering.cpp"

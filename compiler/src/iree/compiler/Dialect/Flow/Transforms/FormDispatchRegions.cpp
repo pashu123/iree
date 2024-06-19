@@ -735,6 +735,9 @@ isFusableWithProducer(OpOperand &operand,
     }
     return false;
   }
+  if(isa<linalg::GenericOp>(producer)){
+    return true;
+  }
 
   if (options.fusePadWithConsumers && isa<tensor::PadOp>(producer) &&
       isa<linalg::ConvolutionOpInterface>(consumer)) {

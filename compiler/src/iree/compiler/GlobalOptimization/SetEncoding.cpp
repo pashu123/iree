@@ -52,6 +52,38 @@ using IREE::Encoding::EncodingRole;
 
 /// Pads `value` enough for any actual tile sizes that could result from
 /// materialization of `encodingAttr`.
+bool static isLinalgGenericBroadcast(linalg::GenericOp genericOp) {
+
+  // Check op has single input and output.
+  if (genericOp.getNumDpsInputs() != 1 || genericOp.getNumDpsInits() != 1)
+    return false;
+
+  // Check all iterators are parallel.
+  if (genericOp.getNumParallelLoops() != genericOp.getNumLoops())
+    return false;
+
+  // Check that the two indexing maps are a permutation of each other.
+  SmallVector<AffineMap> indexingMaps = genericOp.getIndexingMapsArray();
+  bool isTranspose = indexingMaps[1].isIdentity();
+
+  if (!isTranspose)
+    return false;
+
+  // Make sure the region only contains a yield op.
+  Block &body = genericOp.getRegion().front();
+  if (!llvm::hasSingleElement(body))
+    return false;
+
+  auto yieldOp = cast<linalg::YieldOp>(body.getTerminator());
+
+  // The yield op should return the block argument corresponding to the input.
+  auto yieldArg = dyn_cast<BlockArgument>(yieldOp.getValues()[0]);
+  if (!yieldArg || yieldArg.getArgNumber() != 0 || yieldArg.getOwner() != &body)
+    return false;
+
+  return true;
+}
+
 static Value pad(OpBuilder &builder, Location loc, Value source,
                  EncodingAttr encodingAttr) {
   RankedTensorType sourceType = cast<RankedTensorType>(source.getType());
@@ -131,12 +163,54 @@ static MatmulNarrowSizes getMatmulNarrowSizes(ShapedType outType,
   return narrow;
 }
 
+static Value padBroadcastAndSetEncoding(OpBuilder &builder, Location loc,
+                                         linalg::GenericOp broadcastOp, EncodingRole role,
+                                         ArrayRef<Type> operandElemTypes,
+                                         MatmulNarrowSizes narrow,
+                                         ArrayRef<AffineMap> indexingMaps,
+                                        Type origType) {
+  MLIRContext *ctx = builder.getContext();
+  auto encodingForPad = EncodingAttr::get(ctx, role, operandElemTypes,
+                                          /*originalType=*/Type{}, narrow.M,
+                                          narrow.N, indexingMaps);
+  Value source = broadcastOp.getDpsInputs()[0];
+  Value padded = pad(builder, loc, source, encodingForPad);
+
+  auto encodingForSetEncoding = encodingForPad;
+  if(padded.getType() != source.getType()){
+  encodingForSetEncoding = EncodingAttr::get(
+      ctx, role, operandElemTypes,
+      /*originalType=*/source.getType(), narrow.M, narrow.N, indexingMaps);
+  }
+
+  Value encodedInput =  setEncoding(builder, loc, padded, encodingForSetEncoding);
+
+  Value updatedGeneric = builder.create<linalg::GenericOp>(
+      loc, broadcastOp.getResultTypes(), ValueRange{encodedInput},
+      broadcastOp.getDpsInits(), broadcastOp.getIndexingMapsArray(),
+      broadcastOp.getIteratorTypesArray(),
+      [=](OpBuilder &b, Location loc, ValueRange args) {
+        Value value = args[0];
+        b.create<linalg::YieldOp>(loc, value);
+      }).getResult(0);
+
+  return updatedGeneric;
+}
+
 static Value padAndSetEncoding(OpBuilder &builder, Location loc, Value source,
                                EncodingRole role,
                                ArrayRef<Type> operandElemTypes,
                                MatmulNarrowSizes narrow,
                                ArrayRef<AffineMap> indexingMaps) {
   MLIRContext *ctx = builder.getContext();
+
+  // auto broadcastOp =  source.getDefiningOp<linalg::GenericOp>();
+  // if (broadcastOp)
+  //   return padBroadcastAndSetEncoding(builder, loc, broadcastOp, role,
+  //                                   operandElemTypes, narrow, indexingMaps,
+  //                                     source.getType());
+
+
   // No need to specify original_type in the encoding poadded to pad(), because
   // the operand there is the `source` tensor, so it will default to reading its
   // original shape.
@@ -395,6 +469,81 @@ struct FoldFillWithSetEncoding
   }
 };
 
+
+/// Pattern to fold a `linalg.broadcast` -> `iree_encoding.set_encoding`
+/// operation into a `linalg.broadcast` of the encoded type.
+struct FoldBroadcastWithSetEncoding
+    : public OpRewritePattern<IREE::Encoding::SetEncodingOp> {
+  using OpRewritePattern<IREE::Encoding::SetEncodingOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IREE::Encoding::SetEncodingOp encodingOp,
+                                PatternRewriter &rewriter) const override {
+
+    auto broadcastOp = encodingOp.getSource()
+                           .getDefiningOp<tensor::PadOp>()
+                           .getOperand(0)
+                           .getDefiningOp<linalg::GenericOp>();
+    if (!broadcastOp)
+      return failure();
+
+    if (!isLinalgGenericBroadcast(broadcastOp))
+      return failure();
+
+    SmallVector<Value> newInputs;
+    SmallVector<Value> newOutputs;
+    SmallVector<Type> newResultTypes;
+    SmallVector<AffineMap> maps;
+    for (OpOperand *in : broadcastOp.getDpsInputOperands()) {
+        newInputs.push_back(in->get());
+    }
+    for (OpOperand &out : broadcastOp.getDpsInitsMutable()) {
+        newOutputs.push_back(out.get());
+        newResultTypes.push_back(out.get().getType());
+    }
+
+    RankedTensorType encodingType = encodingOp.getResultType();
+    // Create a new fill op, with outs being defined by a new `tensor.empty` op.
+    Location loc = broadcastOp.getLoc();
+
+    SmallVector<OpFoldResult> dimValues = tensor::getMixedSizes(
+        rewriter, loc, broadcastOp.getDpsInputs()[0]);
+
+    SmallVector<OpFoldResult> dimOutValues = tensor::getMixedSizes(
+        rewriter, loc, broadcastOp.getDpsInits()[0]);
+
+    EncodingAttr encoding = IREE::Encoding::getEncodingAttr(encodingType);
+
+    encoding.dump();
+
+    auto newEmptyOp = rewriter.create<tensor::EmptyOp>(
+        loc, dimValues, encodingType.getElementType(),
+        encodingType.getEncoding());
+
+
+    auto copyOp = rewriter.create<linalg::CopyOp>(loc, newInputs,
+                                                ValueRange{newEmptyOp}).getResult(0);
+
+    auto outtType = dyn_cast<RankedTensorType>(newOutputs[0].getType());
+    auto encodedOutType = RankedTensorType::get(
+      outtType.getShape(), outtType.getElementType(),
+      encodingType.getEncoding());
+
+    auto newemptyout = rewriter.create<tensor::EmptyOp>(
+        loc, dimOutValues, encodedOutType.getElementType(),
+        encodedOutType.getEncoding());
+
+    rewriter.replaceOpWithNewOp<linalg::GenericOp>(
+        encodingOp, encodedOutType, ValueRange{copyOp}, ValueRange{newemptyout},
+        broadcastOp.getIndexingMapsArray(), broadcastOp.getIteratorTypesArray(),
+        [=](OpBuilder &b, Location loc, ValueRange args) {
+          Value value = args[0];
+          b.create<linalg::YieldOp>(loc, value);
+        });
+
+    return success();
+  }
+};
+
 struct SetEncodingPass : public SetEncodingBase<SetEncodingPass> {
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<IREE::Encoding::IREEEncodingDialect>();
@@ -412,6 +561,7 @@ void SetEncodingPass::runOnOperation() {
     patterns.insert<setContractionOpEncoding>(context, padFactor);
     linalg::FillOp::getCanonicalizationPatterns(patterns, context);
     patterns.insert<FoldFillWithSetEncoding>(context);
+    // patterns.insert<FoldBroadcastWithSetEncoding>(context);
     memref::populateResolveRankedShapedTypeResultDimsPatterns(patterns);
     if (failed(applyPatternsAndFoldGreedily(getOperation(),
                                             std::move(patterns)))) {

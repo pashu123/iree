@@ -309,6 +309,13 @@ static FailureOr<SmallVector<Value>> lowerUpperBoundTileSizeOpToConstants(
   }
   ArrayRef<int64_t> innerTileSizes = materializeEncodingInfo->innerTileSizes;
   ArrayRef<int64_t> innerDimsPos = materializeEncodingInfo->innerDimsPos;
+
+  for(auto i: innerTileSizes){
+    llvm::errs()<<"innerTileSizes: "<<i<<"\n";
+  }
+  for(auto i: innerDimsPos){
+    llvm::errs()<<"innerDimsPos: "<<i<<"\n";
+  }
   SmallVector<Value> results(tensorType.getRank());
   for (unsigned i = 0; i < innerTileSizes.size(); ++i) {
     int64_t tileSize = innerTileSizes[i];
@@ -759,6 +766,7 @@ struct SetEncodingOpToPackOpConversion
       rewriter.replaceOp(encodingOp, result);
       return success();
     }
+    packOp->getResult().dump();
     rewriter.replaceOp(encodingOp, packOp->getResult());
     return success();
   }

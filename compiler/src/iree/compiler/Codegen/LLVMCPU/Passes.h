@@ -30,6 +30,8 @@ createLLVMCPUCheckIRBeforeLLVMConversionPass(bool failOnOutOfBounds = true);
 std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
 createLLVMCPUEmitVectorizationRemarksPass();
 
+std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
+createLLVMCPUGenericBroadCastToExpandShapePass();
 /// Pass to select a lowering strategy for a hal.executable.variant operation.
 /// The variant is annotated with the selected strategies, which are
 /// subsequently ingested by LLVMCPULowerExecutableTargetPass.

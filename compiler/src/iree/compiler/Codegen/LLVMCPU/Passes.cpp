@@ -527,7 +527,8 @@ void addMmt4dTilingExpertPassPipeline(OpPassManager &funcPassManager,
     options.enableVectorMasking = pipelineOpt.enableVectorMasking;
     options.vectorizePadding = true;
     options.vectorizeGatherAccesses = true;
-    funcPassManager.addPass(createGenericVectorizationPass(options));
+    funcPassManager.addPass(createLLVMCPUGenericBroadCastToExpandShapePass());
+    funcPassManager.addPass(createGenericVectorizationPass());
     funcPassManager.addPass(createOptimizeTensorInsertExtractSlicesPass());
     funcPassManager.addPass(createCanonicalizerPass());
     funcPassManager.addPass(createCSEPass());
