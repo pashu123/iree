@@ -166,6 +166,17 @@ static SmallVector<scf::ForOp> generateTileLoopNest(
     loops.push_back(loop);
     builder.setInsertionPoint(loop.getBody()->getTerminator());
   }
+
+  // Update the sizes if it contains arith.index with i64 attrs.
+  for (auto [idx, val] : llvm::enumerate(sizes)) {
+    if (auto dyn_cast = llvm::dyn_cast_if_present<Value>(val)) {
+      APInt intVal;
+      if (matchPattern(dyn_cast, m_ConstantInt(&intVal))) {
+        sizes[idx] = builder.getI64IntegerAttr(intVal.getSExtValue());
+      }
+    }
+  }
+
   return loops;
 }
 
