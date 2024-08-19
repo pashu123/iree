@@ -50,6 +50,9 @@ def IREEEncoding_SetEncodingOp : IREEEncoding_PureOp<"set_encoding",[
     RankedTensorType getResultType() {
       return cast<RankedTensorType>(getResult().getType());
     }
+    Value getOperand(int index) {
+      return getSource();
+    }
   }];
 }
 

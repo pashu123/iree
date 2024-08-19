@@ -262,12 +262,23 @@ reifyDynamicResultDimsImpl(OpBuilder &b, Value value,
   b.setInsertionPoint(op);
 
   // Case 3: Value is tied. Reify the dimensions of the tied operand.
+  auto haveSameTypeWithoutEncoding = [](Type t0, Type t1) {
+    auto t0Shaped = dyn_cast<ShapedType>(t0);
+    auto t1Shaped = dyn_cast<ShapedType>(t1);
+    if (!t0Shaped || !t1Shaped) {
+      return t0 == t1;
+    }
+    return t0Shaped.getShape() == t1Shaped.getShape() &&
+           t0Shaped.getElementType() == t1Shaped.getElementType();
+  };
   auto tiedOp = dyn_cast<IREE::Util::TiedOpInterface>(op);
   if (tiedOp) {
     Value tiedOperand = tiedOp.getTiedResultOperand(value);
-    if (tiedOperand && tiedOperand.getType() == value.getType())
+    if (tiedOperand &&
+        haveSameTypeWithoutEncoding(tiedOperand.getType(), value.getType())) {
       return reifyDynamicResultDimsImpl(b, tiedOperand, dynamicDims,
                                         createTensorDimOps);
+    }
   }
 
   // Case 4: Query ShapeAwareOpInterface.
@@ -288,6 +299,15 @@ reifyDynamicResultDimsImpl(OpBuilder &b, Value value,
     for (int64_t i = 0; i < shapedType.getRank(); ++i)
       if (shapedType.isDynamicDim(i))
         dynamicDims.push_back(dims[opResult.getResultNumber()][i].get<Value>());
+    return success();
+  }
+
+  // Case 6: Value is a DispatchRegionOp result.
+  auto dispatchRegionOp = dyn_cast<DispatchRegionOp>(op);
+  if (dispatchRegionOp) {
+    ValueRange dims =
+        dispatchRegionOp.getResultDynamicDims(opResult.getResultNumber());
+    dynamicDims.append(dims.begin(), dims.end());
     return success();
   }
 
@@ -537,7 +557,6 @@ moveFollowingOpIntoDispatchRegion(RewriterBase &rewriter, Operation *target,
   for (auto [index, result] : llvm::enumerate(target->getResults())) {
     replacedValues.push_back(result);
     yieldedResults.push_back(clonedTarget->getResult(index));
-    rewriter.setInsertionPoint(target);
     SmallVector<Value> &dims = dispatchOpNewResultsDynamicDims.emplace_back();
     if (failed(reifyDynamicResultDims(rewriter, result, dims))) {
       return target->emitOpError(
