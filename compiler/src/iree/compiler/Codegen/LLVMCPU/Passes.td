@@ -61,6 +61,11 @@ def LLVMCPUCheckIRBeforeLLVMConversionPass :
   ];
 }
 
+def LLVMCPUGenericBroadCastToExpandShapePass :
+    InterfacePass<"iree-llvmcpu-generic-broadcast-to-expand-shape", "mlir::FunctionOpInterface"> {
+  let summary = "Convert generic broadcast ops to expand shape ops.";
+}
+
 def LLVMCPUEmitVectorizationRemarksPass :
     InterfacePass<"iree-llvmcpu-emit-vectorization-remarks", "mlir::FunctionOpInterface"> {
   let summary = "Emit vectorization remarks on Linalg ops";

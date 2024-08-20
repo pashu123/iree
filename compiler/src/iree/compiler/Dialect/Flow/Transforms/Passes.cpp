@@ -292,6 +292,7 @@ static void addDispatchRegionCreationPasses(OpPassManager &passManager) {
           IREE::Flow::createFuseEncodingOpsIntoDispatchRegionsPass)
       // Collapse dimensions of linalg Ops.
       .addPass(IREE::Flow::createCollapseDimensionsPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       // Convert dispatch regions into dispatch workgroups by capturing values
       // and making the new workgroups isolated from above.
       .addPass(IREE::Flow::createConvertDispatchRegionsToWorkgroupsPass)

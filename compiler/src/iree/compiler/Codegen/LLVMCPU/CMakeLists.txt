@@ -79,6 +79,7 @@ iree_cc_library(
     "Utils.cpp"
     "VectorContractCustomKernels.cpp"
     "VerifyLinalgTransformLegality.cpp"
+    "LLVMCPUGenericBroadCastToExpandShape.cpp"
   DEPS
     ::PassHeaders
     ::PassesIncGen

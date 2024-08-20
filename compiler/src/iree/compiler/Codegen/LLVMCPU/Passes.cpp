@@ -521,7 +521,7 @@ void addMmt4dTilingExpertPassPipeline(OpPassManager &funcPassManager,
   funcPassManager.addPass(createCPUPrepareUkernelsPass());
   funcPassManager.addPass(
       createCPULowerToUKernelsPass(clSkipIntermediateRoundings));
-  funcPassManager.addPass(createLLVMCPUTilePass(
+  funcPassManager.addPass(createLLVMCPUTileRootAndFuseInputOperands(
       static_cast<int64_t>(tilingConfig.getVectorReductionLevel())));
 
   {
@@ -529,6 +529,8 @@ void addMmt4dTilingExpertPassPipeline(OpPassManager &funcPassManager,
     options.enableVectorMasking = pipelineOpt.enableVectorMasking;
     options.vectorizePadding = true;
     options.vectorizeGatherAccesses = true;
+    // funcPassManager.addPass(createLLVMCPUGenericBroadCastToExpandShapePass());
+    funcPassManager.addPass(createLLVMCPUGenericBroadCastToExpandShapePass());
     funcPassManager.addPass(createGenericVectorizationPass(options));
     funcPassManager.addPass(createOptimizeTensorInsertExtractSlicesPass());
     funcPassManager.addPass(createCanonicalizerPass());
