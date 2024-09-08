@@ -338,6 +338,7 @@ void TileAndDistributeToWorkgroupsUsingForallOpPass::runOnOperation() {
 
   // If the `tilableOp` is a `memref` op, then just tile the operation.
   SmallVector<LoopLikeOpInterface> tilingLoops;
+  Operation *lastTiledProducerForConsumerFusion = nullptr;
   if (tilableOp->getNumResults() == 0) {
     FailureOr<scf::SCFTilingResult> tilingResult =
         scf::tileUsingSCF(rewriter, tilableOp, tilingOptions);
@@ -359,7 +360,8 @@ void TileAndDistributeToWorkgroupsUsingForallOpPass::runOnOperation() {
       rewriter.replaceAllUsesWith(origValue, replacement);
     }
     std::swap(tileAndFuseResult->loops, tilingLoops);
-    fuseConsumers(rewriter, tileAndFuseResult->tiledAndFusedOps.front());
+    lastTiledProducerForConsumerFusion =
+        tileAndFuseResult->tiledAndFusedOps.front();
   }
   if (!tilingLoops.empty()) {
     if (tilingLoops.size() != 1 || !isa<scf::ForallOp>(tilingLoops[0])) {
@@ -372,6 +374,10 @@ void TileAndDistributeToWorkgroupsUsingForallOpPass::runOnOperation() {
     if (failed(dropUnitDistributedDims(rewriter, forallOp))) {
       forallOp.emitOpError("failed to drop unit dimensions");
       return signalPassFailure();
+    }
+
+    if (lastTiledProducerForConsumerFusion) {
+      fuseConsumers(rewriter, lastTiledProducerForConsumerFusion);
     }
   }
 
