@@ -119,6 +119,7 @@ static void addTileAndDistributePasses(OpPassManager &funcPassManager) {
     funcPassManager.addPass(createConvertToDestinationPassingStylePass());
     funcPassManager.addPass(createFoldAffineMinInDistributedLoopsPass());
   }
+  funcPassManager.addPass(createLinalgFoldUnitExtentDimsPass());
   funcPassManager.addPass(createCanonicalizerPass());
   funcPassManager.addPass(createCSEPass());
   funcPassManager.addPass(createFuseTensorPadWithConsumerPass());
@@ -524,14 +525,14 @@ void addMmt4dTilingExpertPassPipeline(OpPassManager &funcPassManager,
                                       LLVMCPUPipelineOptions &pipelineOpt) {
   addTileAndDistributePasses(funcPassManager);
 
-  funcPassManager.addPass(createLLVMCPUTileAndFusePass(
+  funcPassManager.addPass(createLLVMCPUTileRootAndFuseProducerConsumer(
       static_cast<int64_t>(tilingConfig.getVectorCommonParallelLevel())));
   // The below two passes are nop if the "mmt4d" is explicitly excluded in the
   // ukernels attribute.
   funcPassManager.addPass(createCPUPrepareUkernelsPass());
   funcPassManager.addPass(
       createCPULowerToUKernelsPass(clSkipIntermediateRoundings));
-  funcPassManager.addPass(createLLVMCPUTilePass(
+  funcPassManager.addPass(createLLVMCPUTileRootAndFuseInputOperands(
       static_cast<int64_t>(tilingConfig.getVectorReductionLevel())));
 
   {

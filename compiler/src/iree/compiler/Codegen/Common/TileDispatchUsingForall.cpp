@@ -9,6 +9,7 @@
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenDialect.h"
 #include "iree/compiler/Codegen/Interfaces/PartitionableLoopsInterface.h"
 #include "iree/compiler/Codegen/Utils/Utils.h"
+#include "iree/compiler/Codegen/Utils/CPUUtils.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtDialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
@@ -53,17 +54,19 @@ struct TilingInfo {
 static FailureOr<TilingInfo>
 getTiledAndDistributionInfo(RewriterBase &rewriter,
                             ArrayRef<Operation *> computeOps) {
-  Operation *tilableOp = nullptr;
-  for (Operation *op : llvm::reverse(computeOps)) {
-    if (getLoweringConfig(op)) {
-      tilableOp = op;
-      break;
-    }
-  }
-  if (!tilableOp) {
+  FailureOr<Operation *> rootOp = getRootOperation(computeOps);
+
+  // for (Operation *op : computeOps) {
+  //   if (getLoweringConfig(op)) {
+  //     tilableOp = op;
+  //     break;
+  //   }
+  // }
+  if (failed(rootOp)) {
     // There is no lowering config. Return `null`.
     return TilingInfo{nullptr, {}, {}};
   }
+  Operation *tilableOp = rootOp.value();
 
   IREE::Codegen::LoweringConfigAttrInterface tilableOpConfig =
       getLoweringConfig(tilableOp);

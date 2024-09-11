@@ -91,6 +91,21 @@ void LLVMCPUSelectLoweringStrategyPass::runOnOperation() {
     if (!translationInfo) {
       continue;
     }
+    // // Go over all the ops of funcOp if it's a tensor.unpack op
+    // // set the lowering configuration manually.
+    // funcOp.walk([&](Operation *op) -> WalkResult {
+    //   if (auto tensorUnpackOp = dyn_cast<tensor::UnPackOp>(op)) {
+    //     op->getAttrOfType<LoweringConfigAttr>("lowering_config").dump();
+    //     TileSizesListType tileSizes;
+    //     // Set the tile sizes for the tensor.unpack op.
+    //     tileSizes.push_back({1, 16, 16});
+    //     tileSizes.push_back({1, 16, 16});
+    //   auto config = IREE::Codegen::LoweringConfigAttr::get(op->getContext(), tileSizes);
+    //   op->setAttr("lowering_config", config);
+    //   }
+    //   return WalkResult::advance();
+    // });
+
 
     // Verify the configuration.
     LogicalResult verificationStatus = success();

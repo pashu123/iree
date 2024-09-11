@@ -257,6 +257,7 @@ void LLVMCPUTileRootAndFuseProducerConsumer::runOnOperation() {
         << tilingLevel.getValue() << "\n";
     return signalPassFailure();
   }
+  llvm::errs()<<tilingLevel.getValue()<<"\n";
 
   if (failed(tileRootAndFuse(
           rewriter, dyn_cast<TilingInterface>(rootOp.value()),

@@ -669,6 +669,12 @@ isFusableWithProducer(OpOperand &operand,
     return false;
   }
 
+  if (auto linalgOp = dyn_cast<linalg::LinalgOp>(producer)) {
+    if (IREE::LinalgExt::isBroadcastingOp(linalgOp)) {
+      return true;
+    }
+  }
+
   if (options.fusePadWithConsumers && isa<tensor::PadOp>(producer) &&
       isa<linalg::ConvolutionOpInterface>(consumer)) {
     return true;
