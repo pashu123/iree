@@ -94,7 +94,7 @@ static llvm::cl::opt<bool> clEnableVectorContractCustomKernels(
 static llvm::cl::opt<bool> clTileDispatchUsingForall(
     "iree-llvmcpu-tile-dispatch-using-forall",
     llvm::cl::desc("Eanble tile and distribute to workgroups using scf.forall"),
-    llvm::cl::init(false));
+    llvm::cl::init(true));
 
 // By default, IREE does not enable the Armv9-A streaming SVE mode in the
 // presence of scalable vectors (even when using `+sme`), as currently there's
