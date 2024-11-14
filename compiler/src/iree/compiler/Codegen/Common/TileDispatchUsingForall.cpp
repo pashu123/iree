@@ -18,6 +18,7 @@
 #include "mlir/Dialect/SCF/Transforms/TileUsingInterface.h"
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "iree/compiler/Codegen/Utils/CPUUtils.h"
 
 #define DEBUG_TYPE "tile-and-distribute-to-workgroups-using-forall-op"
 
@@ -56,20 +57,23 @@ getTiledAndDistributionInfo(RewriterBase &rewriter,
   // TODO: It is expected that at most one compute op has a workgroup tiling
   // level. Currently, it selects the last compute op that has workgroup tiling
   // level.
-  Operation *tilableOp = nullptr;
-  for (Operation *op : llvm::reverse(computeOps)) {
-    if (getLoweringConfig(op)) {
-      if (!getLoweringConfig(op).hasWorkgroupTilingLevel()) {
-        continue;
-      }
-      tilableOp = op;
-      break;
-    }
-  }
-  if (!tilableOp) {
+  // Operation *tilableOp = nullptr;
+  // for (Operation *op : llvm::reverse(computeOps)) {
+  //   if (getLoweringConfig(op)) {
+  //     if (!getLoweringConfig(op).hasWorkgroupTilingLevel()) {
+  //       continue;
+  //     }
+  //     tilableOp = op;
+  //     break;
+  //   }
+  // }
+
+  FailureOr<Operation *> rootOp = getRootOperation(computeOps);
+  if (failed(rootOp)) {
     // There is no lowering config. Return `null`.
     return TilingInfo{nullptr, {}, {}};
   }
+  Operation *tilableOp = rootOp.value();
 
   IREE::Codegen::LoweringConfigAttrInterface tilableOpConfig =
       getLoweringConfig(tilableOp);
