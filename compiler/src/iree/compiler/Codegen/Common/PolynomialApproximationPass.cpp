@@ -18,7 +18,7 @@ static llvm::cl::opt<bool> clNativeMathPrecision(
     "iree-codegen-gpu-native-math-precision",
     llvm::cl::desc(
         "Skip polynomial lowering for math op natively available on GPU"),
-    llvm::cl::init(false));
+    llvm::cl::init(true));
 
 #define GEN_PASS_DEF_POLYNOMIALAPPROXIMATIONPASS
 #include "iree/compiler/Codegen/Common/Passes.h.inc"
@@ -41,7 +41,7 @@ class PolynomialApproximationPass final
     populateExpandFPowIPattern(mathPatterns);
 
     if (clNativeMathPrecision) {
-      mathPatterns.add<math::ErfPolynomialApproximation>(&getContext());
+      // mathPatterns.add<math::ErfPolynomialApproximation>(&getContext());
     } else {
       populateExpandExp2FPattern(mathPatterns);
       populateMathPolynomialApproximationPatterns(mathPatterns);
