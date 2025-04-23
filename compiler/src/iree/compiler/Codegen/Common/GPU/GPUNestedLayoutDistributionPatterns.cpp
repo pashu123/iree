@@ -402,6 +402,8 @@ struct DistributeTransferWrite final
   LogicalResult matchAndRewrite(vector::TransferWriteOp writeOp,
                                 DistributionSignature &signature,
                                 PatternRewriter &rewriter) const override {
+
+    // Location loc = writeOp.getLoc();
     NestedLayoutAttr vectorLayout =
         dyn_cast<NestedLayoutAttr>(signature[writeOp.getValueToStore()]);
     if (!vectorLayout) {
@@ -437,6 +439,27 @@ struct DistributeTransferWrite final
       return rewriter.notifyMatchFailure(
           writeOp, "warp or thread tiles have overlapping strides");
     }
+    SmallVector<int64_t> subgroupSplit(vectorLayout.getThreadTile());
+    for (auto i : subgroupSplit) {
+      llvm::errs() << "The value in subgroup split is " << i << "\n";
+    }
+    subgroupSplit.push_back(subgroupSize);
+    // auto delinSubgroup = rewriter.create<affine::AffineDelinearizeIndexOp>(
+    //   loc, threadId, subgroupSplit, /*hasOuterBound=*/false);
+
+    // Value duplicateSubgroup = delinSubgroup.getResult(0);
+
+    int64_t totThreads = 1;
+    for (int64_t i : vectorLayout.getThreadTile()) {
+      totThreads *= i;
+    }
+    int64_t subgroupSizebyThreads = subgroupSize / totThreads;
+    SmallVector<int64_t> threadSplit(vectorLayout.getThreadTile());
+    threadSplit.insert(threadSplit.begin(), subgroupSizebyThreads);
+    // auto delinThread = rewriter.create<affine::AffineDelinearizeIndexOp>(
+    //   loc, threadId, threadSplit, /*hasOuterBound=*/false);
+
+    // Value duplicateThread = delinThread.getResult(0);
 
     Value distributedVector =
         getDistributed(rewriter, writeOp.getValueToStore(), vectorLayout);
@@ -483,12 +506,68 @@ struct DistributeTransferWrite final
         slicedMask = getSlicedPermutedMask(rewriter, writeOp.getLoc(), permMap,
                                            maskOffsets, maskLayout, mask);
       }
+      Location loc = writeOp.getLoc();
 
-      rewriter.create<vector::TransferWriteOp>(
-          writeOp.getLoc(), slicedVector, writeOp.getSource(), slicedIndices,
-          writeOp.getPermutationMapAttr(), slicedMask,
-          writeOp.getInBoundsAttr());
+      Value zeroIdx = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+      Value cstSubgroup = rewriter.create<arith::ConstantIndexOp>(loc, 64);
+
+      Value predicateOnSharedWrites =
+          rewriter.create<arith::RemUIOp>(loc, threadId, cstSubgroup);
+
+      // Value isSubgroup0 = rewriter.create<arith::CmpIOp>(
+      //     loc, arith::CmpIPredicate::eq, threadId, duplicateSubgroup);
+      Value isThread0 = rewriter.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::eq, zeroIdx, predicateOnSharedWrites);
+
+      Value globalThreadId = rewriter.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::eq, threadId, zeroIdx);
+
+      // Value predicateBeforeWrite = rewriter.create<arith::AndIOp>(loc,
+      // isSubgroup0, isThread0);
+
+      Attribute workgroupSpace = gpu::AddressSpaceAttr::get(
+          writeOp.getContext(), gpu::AddressSpace::Workgroup);
+      // Attribute globalSpace = gpu::AddressSpaceAttr::get(
+      //     writeOp.getContext(), gpu::AddressSpace::Global);
+      if (dyn_cast<MemRefType>(writeOp.getSource().getType())
+              .getMemorySpace() == workgroupSpace) {
+
+        rewriter.create<scf::IfOp>(
+            loc,
+            /*cond=*/isThread0,
+            // then-region builder:
+            [&](OpBuilder &nestedBuilder, Location nestedLoc) {
+              nestedBuilder.create<vector::TransferWriteOp>(
+                  nestedLoc, slicedVector, writeOp.getSource(), slicedIndices,
+                  writeOp.getPermutationMapAttr(), slicedMask,
+                  writeOp.getInBoundsAttr());
+              nestedBuilder.create<scf::YieldOp>(nestedLoc);
+            });
+
+        //  } else (dyn_cast<MemRefType>(writeOp.getSource().getType())
+        // //                .getMemorySpace() == globalSpace) {
+      } else {
+
+        rewriter.create<scf::IfOp>(
+            loc,
+            /*cond=*/globalThreadId,
+            // then-region builder:
+            [&](OpBuilder &nestedBuilder, Location nestedLoc) {
+              nestedBuilder.create<vector::TransferWriteOp>(
+                  nestedLoc, slicedVector, writeOp.getSource(), slicedIndices,
+                  writeOp.getPermutationMapAttr(), slicedMask,
+                  writeOp.getInBoundsAttr());
+              nestedBuilder.create<scf::YieldOp>(nestedLoc);
+            });
+      }
     }
+    // } else {
+
+    //   rewriter.create<vector::TransferWriteOp>(
+    //       writeOp.getLoc(), slicedVector, writeOp.getSource(), slicedIndices,
+    //       writeOp.getPermutationMapAttr(), slicedMask,
+    //       writeOp.getInBoundsAttr());
+    // }
 
     rewriter.eraseOp(writeOp);
     return success();

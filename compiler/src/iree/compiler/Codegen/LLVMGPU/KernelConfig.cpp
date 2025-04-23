@@ -716,7 +716,6 @@ setReductionVectorDistributionConfig(IREE::GPU::TargetAttr target,
       maxLoadBits.has_value() ? *maxLoadBits : 128;
 
   unsigned vectorSize = largestLoadSizeInBits / *bitWidth;
-  unsigned threadLoads = vectorSize;
   while ((reductionSize / vectorSize) % subgroupSize != 0) {
     vectorSize /= 2;
   }
@@ -756,7 +755,7 @@ setReductionVectorDistributionConfig(IREE::GPU::TargetAttr target,
   // the root operation and ignores other operation within a dispatch.
   // Extend it to use per operation within a dispatch.
   if (failed(populateConfigInfo(*computeOps, target, workgroupSize,
-                                subgroupSize, threadLoads))) {
+                                subgroupSize, vectorSize))) {
     return failure();
   }
 
