@@ -573,6 +573,14 @@ OnlineAttentionOp::decomposeOperation(OpBuilder &b) {
   AffineMap pMap = sMap;
   Value p = computeSubAndExp2(b, loc, maxMap, sMap, newMax, s);
 
+  FloatAttr splatVal = b.getF32FloatAttr(224.4384f);
+  auto constAttr =
+      DenseElementsAttr::get(cast<ShapedType>(p.getType()), splatVal);
+
+  Value probScale = b.create<arith::ConstantOp>(loc, p.getType(), constAttr);
+
+  p = elementwiseValueInPlace<arith::MulFOp>(b, loc, pMap, pMap, p, probScale);
+
   // newSum = normSum + rowSum(P)
   Value newSum = reduce<arith::AddFOp>(b, loc, pMap, sumMap, p, normSum);
 
